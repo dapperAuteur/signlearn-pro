@@ -1,14 +1,15 @@
 // Script to generate complete migration with all 353 lessons
 // Run with: node scripts/generate-full-migration.js
 
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { join } from 'path';
 import papaparse from 'papaparse';
 const { parse } = papaparse;
 
 async function generateFullMigration() {
   try {
     // Read CSV file
-    const csvContent = readFileSync('storyAndVerbs5Languages.csv', 'utf8');
+    const csvContent = readFileSync(join('data', 'storyAndVerbs5Languages.csv'), 'utf8');
     
     // Parse CSV
     const parsed = parse(csvContent, {
@@ -21,10 +22,10 @@ async function generateFullMigration() {
 
     // Generate SQL
     let sql = `-- Complete migration with all ${lessons.length} lessons from CSV
--- Generated on ${new Date().toISOString()}
+-- Generated on ${new Date().toISOString()}\n
 
 -- Clear existing data
-DELETE FROM story_lessons;
+DELETE FROM lessons;
 DELETE FROM user_progress;
 DELETE FROM learning_sessions;
 DELETE FROM stories;
@@ -47,11 +48,11 @@ DELETE FROM stories;
       if (storyNum > 3 && storyNum <= 7) difficulty = 2;
       if (storyNum > 7) difficulty = 3;
       
-      storyInserts.push(`('Curb Appeall Story ${storyNum}', 'Learn ${lessonCount} verbs through Curb and friends adventures (lessons ${startLesson}-${endLesson})', ${difficulty}, ${storyNum}, 'https://images.unsplash.com/photo-${1540000000000 + i * 1000000}?w=400')`);
+      storyInserts.push(`('Curb Appeall Story ${storyNum}', 'Learn ${lessonCount} verbs through Curb and friends adventures (lessons ${startLesson}-${endLesson})', ${difficulty}, ${storyNum})`);
     }
 
-    sql += `INSERT INTO stories (title, description, difficulty_level, story_order, thumbnail_url) VALUES\n${storyInserts.join(',\n')};\n\n`;
-    sql += `-- Insert all ${lessons.length} lessons\n`;
+    sql += `INSERT INTO stories (title, description, difficulty_level, story_order) VALUES\n${storyInserts.join(',\n')};\n\n`;
+    sql += `-- Insert all ${lessons.length} lessons into the 'lessons' table\n`;
 
     // Generate lesson inserts
     lessons.forEach((lesson, index) => {
@@ -72,26 +73,31 @@ DELETE FROM stories;
       const italianSentence = lesson['Italian Sentence - Translation of the story sentence in Italian.'] || '';
       const portugueseSentence = lesson['Portuguese Sentence - Translation of the story sentence in Portuguese.'] || '';
 
-      sql += `INSERT INTO story_lessons (story_id, lesson_order, english_verb, spanish_verb, french_verb, italian_verb, portuguese_verb, english_sentence, spanish_sentence, french_sentence, italian_sentence, portuguese_sentence)
+      sql += `INSERT INTO lessons (story_id, lesson_order, english_verb, spanish_verb, french_verb, italian_verb, portuguese_verb, english_sentence, spanish_sentence, french_sentence, italian_sentence, portuguese_sentence)
 SELECT s.id, ${lessonOrder}, '${escape(englishVerb)}', '${escape(spanishVerb)}', '${escape(frenchVerb)}', '${escape(italianVerb)}', '${escape(portugueseVerb)}', '${escape(englishSentence)}', '${escape(spanishSentence)}', '${escape(frenchSentence)}', '${escape(italianSentence)}', '${escape(portugueseSentence)}'
 FROM stories s WHERE s.title = 'Curb Appeall Story ${storyNum}';
 
 `;
     });
 
-    // Add performance optimizations
+    // Add performance optimizations and constraints
     sql += `-- Create indexes for performance with large dataset
-CREATE INDEX idx_story_lessons_story_order ON story_lessons(story_id, lesson_order);
+CREATE INDEX idx_lessons_story_order ON lessons(story_id, lesson_order);
 CREATE INDEX idx_user_progress_mastery ON user_progress(user_id, mastery_level);
 CREATE INDEX idx_learning_sessions_recent ON learning_sessions(user_id, session_start);
 
 -- Add constraints for data integrity
-ALTER TABLE story_lessons ADD CONSTRAINT unique_story_lesson UNIQUE(story_id, lesson_order);
+ALTER TABLE lessons ADD CONSTRAINT unique_story_lesson UNIQUE(story_id, lesson_order);
 ALTER TABLE user_progress ADD CONSTRAINT progress_bounds CHECK (mastery_level >= 0 AND mastery_level <= 100);
 `;
 
     // Write to file
-    const outputPath = 'supabase/migrations/002_complete_story_data.sql';
+    const migrationsDir = 'supabase/migrations';
+    if (!existsSync(migrationsDir)) {
+      console.warn(`Migrations directory not found at ${migrationsDir}. Please ensure it exists.`);
+      return;
+    }
+    const outputPath = join(migrationsDir, `${new Date().toISOString().slice(0,19).replace(/[-:T]/g,'')}_complete_story_data.sql`);
     writeFileSync(outputPath, sql);
     
     console.log(`✅ Generated complete migration with ${lessons.length} lessons`);

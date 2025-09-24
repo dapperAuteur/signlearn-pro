@@ -1,159 +1,74 @@
 // Offline-first data service
 import { signLearnDB } from './indexeddb';
-
-// Sample data - replace with your CSV data
-const SAMPLE_STORIES = [
-  {
-    id: 'story-1',
-    title: 'Curb Story 1',
-    description: 'Learn 30 verbs (1-30)',
-    difficulty_level: 1,
-    story_order: 1,
-    is_active: true,
-    thumbnail_url: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=400'
-  },
-  {
-    id: 'story-2', 
-    title: 'Curb Story 2',
-    description: 'Learn 30 verbs (31-60)',
-    difficulty_level: 1,
-    story_order: 2,
-    is_active: true,
-    thumbnail_url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400'
-  }
-];
-
-const SAMPLE_LESSONS = [
-  {
-    id: 'lesson-1-1',
-    story_id: 'story-1',
-    lesson_order: 1,
-    english_verb: 'to help',
-    spanish_verb: 'ayudar',
-    french_verb: 'aider',
-    italian_verb: 'aiutare',
-    portuguese_verb: 'ajudar',
-    english_sentence: 'Curb Appeall helps Platypus prepare a healthy picnic.',
-    spanish_sentence: 'Curb Appeall ayuda a Platypus a preparar un picnic saludable.',
-    french_sentence: 'Curb Appeall aide Platypus à préparer un pique-nique.',
-    italian_sentence: 'Curb Appeall aiuta Platypus a preparare un picnic.',
-    portuguese_sentence: 'Curb Appeall ajuda o Platypus a preparar um piquenique.',
-    mux_playback_id: null
-  },
-  {
-    id: 'lesson-1-2',
-    story_id: 'story-1',
-    lesson_order: 2,
-    english_verb: 'to study',
-    spanish_verb: 'estudiar',
-    french_verb: 'étudier',
-    italian_verb: 'studiare',
-    portuguese_verb: 'estudar',
-    english_sentence: 'Curb and his friends decided to study nutrition to better understand their favorite foods.',
-    spanish_sentence: 'Curb y sus amigos decidieron estudiar nutrición para entender mejor sus alimentos favoritos.',
-    french_sentence: 'Curb et ses amis ont décidé d\'étudier la nutrition pour mieux comprendre leurs aliments préférés.',
-    italian_sentence: 'Curb e i suoi amici hanno deciso di studiare la nutrizione per capire meglio i loro cibi preferiti.',
-    portuguese_sentence: 'Curb e seus amigos decidiram estudar nutrição para entender melhor seus alimentos favoritos.',
-    mux_playback_id: null
-  }
-];
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { type StoryWithLessons } from '@/types/database';
 
 export class OfflineDataService {
   private initialized = false;
 
   async initialize() {
     if (this.initialized) return;
-    
     await signLearnDB.init();
-    
-    // Check if data exists
-    const stories: any = await signLearnDB.getStories();
-    if (stories.length === 0) {
-      await this.seedData();
-    }
-    
     this.initialized = true;
   }
 
-  private async seedData() {
+  private async seedData(storiesWithLessons: StoryWithLessons[]) {
+    await signLearnDB.clearAll();
     // Add stories
-    for (const story of SAMPLE_STORIES) {
-      await this.addStory(story);
+    for (const { lessons, ...story } of storiesWithLessons) {
+      await signLearnDB.addStory(story as any);
     }
     
     // Add lessons
-    for (const lesson of SAMPLE_LESSONS) {
-      await this.addLesson(lesson);
+    for (const story of storiesWithLessons) {
+      for (const lesson of story.lessons) {
+        await signLearnDB.addLesson(lesson);
+      }
     }
   }
 
-  private async addStory(story: any) {
-    return new Promise((resolve, reject) => {
-      const transaction = (signLearnDB as any).db.transaction(['stories'], 'readwrite');
-      const store = transaction.objectStore('stories');
-      const request = store.add(story);
-      
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
+  private async fetchAndCacheStories(): Promise<StoryWithLessons[]> {
+    const supabase = createClientComponentClient();
+    const { data: networkStories, error } = await supabase
+      .from('stories')
+      .select('*, lessons(*)')
+      .order('story_order');
+
+    if (error) {
+      console.error('Failed to fetch stories from network:', error);
+      throw error;
+    }
+
+    await this.seedData(networkStories);
+    return networkStories;
   }
 
-  private async addLesson(lesson: any) {
-    return new Promise((resolve, reject) => {
-      const transaction = (signLearnDB as any).db.transaction(['lessons'], 'readwrite');
-      const store = transaction.objectStore('lessons');
-      const request = store.add(lesson);
-      
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-  }
+  async getStoriesWithLessons(): Promise<StoryWithLessons[]> {
+    await this.initialize();
 
-  async getStoriesWithLessons() {
-    try {
-      await this.initialize();
-      
-      const stories: any = await signLearnDB.getStories();
+    // 1. Get local data from IndexedDB first
+    const localStories: any[] = await signLearnDB.getStories();
+
+    if (localStories.length > 0) {
+      // If local data exists, return it immediately for a fast UI response.
+      console.log('Serving data from IndexedDB first.');
       const storiesWithLessons = [];
-      
-      for (const story of stories) {
+      for (const story of localStories) {
         const lessons = await signLearnDB.getLessonsByStory(story.id);
-        storiesWithLessons.push({
-          ...story,
-          lessons
-        });
+        storiesWithLessons.push({ ...story, lessons });
       }
-      
+
+      // Then, trigger a background fetch to update the cache.
+      // We don't await this, so the UI isn't blocked.
+      this.fetchAndCacheStories().catch(err => {
+        console.warn('Background cache update failed:', err.message);
+      });
+
       return storiesWithLessons.sort((a, b) => a.story_order - b.story_order);
-    } catch (error) {
-      console.error('Error loading stories:', error);
-      // Return sample data if IndexedDB fails
-      return [{
-        id: 'story-1',
-        title: 'Curb Story 1',
-        description: 'Learn 30 verbs (1-30)',
-        difficulty_level: 1,
-        story_order: 1,
-        is_active: true,
-        thumbnail_url: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=400',
-        lessons: [
-          {
-            id: 'lesson-1-1',
-            story_id: 'story-1',
-            lesson_order: 1,
-            english_verb: 'to help',
-            spanish_verb: 'ayudar',
-            french_verb: 'aider',
-            italian_verb: 'aiutare',
-            portuguese_verb: 'ajudar',
-            english_sentence: 'Curb Appeall helps Platypus prepare a healthy picnic.',
-            spanish_sentence: 'Curb Appeall ayuda a Platypus a preparar un picnic saludable.',
-            french_sentence: 'Curb Appeall aide Platypus à préparer un pique-nique.',
-            italian_sentence: 'Curb Appeall aiuta Platypus a preparare un picnic.',
-            portuguese_sentence: 'Curb Appeall ajuda o Platypus a preparar um piquenique.',
-          }
-        ]
-      }];
+    } else {
+      // If no local data, fetch from network, cache it, and then return it.
+      console.log('No local data found. Fetching from network...');
+      return this.fetchAndCacheStories();
     }
   }
 
