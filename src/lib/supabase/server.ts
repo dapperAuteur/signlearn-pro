@@ -1,19 +1,40 @@
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
-import { offlineData } from '@/lib/storage/offline-data'
 
 // Server component client (for auth only)
 export const createServerClient = () => 
   createServerComponentClient({ cookies })
 
-// Server queries using offline data
+// Server queries using Supabase
 export const serverQueries = {
   getStoryWithLessons: async (storyId: string) => {
-    const storiesWithLessons = await offlineData.getStoriesWithLessons()
-    return storiesWithLessons.find(story => story.id === storyId) || null
+    const supabase = createServerClient()
+    const { data, error } = await supabase
+      .from('stories')
+      .select(`
+        *,
+        lessons (*)
+      `)
+      .eq('id', storyId)
+      .single()
+
+    if (error) {
+      console.error('Error fetching story with lessons:', error)
+      return null
+    }
+    return data
   },
   getAllStories: async () => {
-    const storiesWithLessons = await offlineData.getStoriesWithLessons()
-    return storiesWithLessons.map(({ lessons, ...story }) => story)
+    const supabase = createServerClient()
+    const { data, error } = await supabase
+      .from('stories')
+      .select('*')
+      .order('story_order', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching all stories:', error)
+      return []
+    }
+    return data
   }
 }
