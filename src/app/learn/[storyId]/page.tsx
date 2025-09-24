@@ -1,4 +1,4 @@
-import { createServerClient } from '@/lib/supabase/client';
+import { serverQueries } from '@/lib/supabase/server';
 import { LearningPlayer } from '@/components/LearningPlayer';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
@@ -12,24 +12,7 @@ interface LearnPageProps {
 }
 
 async function getStoryWithLessons(storyId: string): Promise<StoryWithLessons | null> {
-  const supabase = createServerClient();
-  
-  const { data, error } = await supabase
-    .from('stories')
-    .select(`
-      *,
-      lessons:story_lessons(*)
-    `)
-    .eq('id', storyId)
-    .eq('is_active', true)
-    .single();
-
-  if (error) {
-    console.error('Error fetching story:', error);
-    return null;
-  }
-
-  return data;
+  return serverQueries.getStoryWithLessons(storyId);
 }
 
 export default async function LearnPage({ params }: LearnPageProps) {
@@ -75,10 +58,6 @@ export default async function LearnPage({ params }: LearnPageProps) {
         <LearningPlayer 
           lessons={sortedLessons}
           storyId={story.id}
-          onProgress={(progress) => {
-            // Progress updates are handled internally
-            console.log('Lesson progress updated:', progress);
-          }}
         />
       </div>
 
@@ -86,7 +65,7 @@ export default async function LearnPage({ params }: LearnPageProps) {
       <div className="max-w-6xl mx-auto px-4 pb-8">
         <div className="bg-white rounded-lg shadow-md p-6 mt-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">
-            Learning Tips for &quot;{story.title}&quot;
+            Learning Tips for "{story.title}"
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
             <div className="space-y-2">
@@ -106,7 +85,7 @@ export default async function LearnPage({ params }: LearnPageProps) {
               </div>
               <div className="flex items-start">
                 <span className="text-blue-500 mr-2">•</span>
-                <span>Use &quot;Need Practice&quot; if you&apos;re unsure - it helps track progress</span>
+                <span>Use "Need Practice" if you're unsure - it helps track progress</span>
               </div>
             </div>
           </div>
@@ -118,16 +97,11 @@ export default async function LearnPage({ params }: LearnPageProps) {
 
 // Generate static params for better performance
 export async function generateStaticParams() {
-  const supabase = createServerClient();
+  const stories = await serverQueries.getAllStories();
   
-  const { data: stories } = await supabase
-    .from('stories')
-    .select('id')
-    .eq('is_active', true);
-
-  return stories?.map((story) => ({
+  return stories.map((story: { id: string }) => ({
     storyId: story.id,
-  })) || [];
+  }));
 }
 
 // Metadata for SEO

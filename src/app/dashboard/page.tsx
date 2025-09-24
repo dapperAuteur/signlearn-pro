@@ -1,37 +1,33 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRequireAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { queries } from '@/lib/supabase/client';
 import { BookOpen, TrendingUp, Award, Play, ChevronRight } from 'lucide-react';
 import { type StoryWithLessons, type ProgressStats } from '@/types/database';
 import Link from 'next/link';
 
 export default function DashboardPage() {
-  const { user, loading } = useRequireAuth();
+  const { user, loading } = useAuth();
   const [stories, setStories] = useState<StoryWithLessons[]>([]);
   const [stats, setStats] = useState<ProgressStats>({
     storiesCompleted: 0,
     totalStories: 0,
     lessonsStudied: 0,
     totalLessons: 0,
-    currentStreak: 3,
+    currentStreak: user ? 3 : 0, // Only show streak for logged in users
     averageAccuracy: 0,
     totalStudyTime: 0
   });
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (user) {
-      loadDashboardData();
-    }
+    loadDashboardData();
   }, [user]);
 
   const loadDashboardData = async () => {
-    if (!user) return;
-
     try {
-      // Load stories with lessons
+      // Load stories with lessons (works for both guest and authenticated users)
       const storiesData = await queries.getStoriesWithLessons();
       setStories(storiesData);
 
@@ -41,16 +37,18 @@ export default function DashboardPage() {
       
       for (const story of storiesData) {
         totalLessons += story.lessons.length;
-        const progress = await queries.getStoryProgress(user.id, story.id);
-        lessonsWithProgress += progress.length;
+        if (user) {
+          const progress = await queries.getStoryProgress(user.id, story.id) as any[];
+          lessonsWithProgress += progress.length;
+        }
       }
 
       setStats(prev => ({
         ...prev,
         totalStories: storiesData.length,
         totalLessons,
-        lessonsStudied: lessonsWithProgress,
-        storiesCompleted: storiesData.filter(s => s.lessons.length > 0).length // Simplified for MVP
+        lessonsStudied: user ? lessonsWithProgress : 0,
+        storiesCompleted: user ? storiesData.filter(s => s.lessons.length > 0).length : 0
       }));
 
     } catch (error) {
@@ -83,11 +81,21 @@ export default function DashboardPage() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">
-            Welcome back! 👋
+            {user ? 'Welcome back! 👋' : 'Try SignLearn Pro 👋'}
           </h1>
           <p className="text-gray-600">
-            Continue your ASL learning journey with story-based lessons
+            {user ? 
+              'Continue your ASL learning journey with story-based lessons' : 
+              'Start learning ASL with interactive stories - no account required!'
+            }
           </p>
+          {!user && (
+            <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <p className="text-blue-800 text-sm">
+                <Link href="/signup" className="font-semibold underline">Create an account</Link> to save your progress and track your learning!
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Progress Stats */}
@@ -99,16 +107,16 @@ export default function DashboardPage() {
             </div>
             <div className="space-y-2">
               <div className="flex justify-between">
-                <span className="text-gray-600">Lessons Studied:</span>
+                <span className="text-gray-600">Lessons Available:</span>
                 <span className="font-semibold text-blue-600">
-                  {stats.lessonsStudied}/{stats.totalLessons}
+                  {user ? `${stats.lessonsStudied}/` : ''}{stats.totalLessons}
                 </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <div 
                   className="bg-blue-600 h-2 rounded-full"
                   style={{ 
-                    width: `${stats.totalLessons > 0 ? (stats.lessonsStudied / stats.totalLessons) * 100 : 0}%` 
+                    width: `${user && stats.totalLessons > 0 ? (stats.lessonsStudied / stats.totalLessons) * 100 : 0}%` 
                   }}
                 />
               </div>
@@ -117,14 +125,27 @@ export default function DashboardPage() {
 
           <div className="bg-white rounded-lg shadow-md p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-800">Current Streak</h3>
+              <h3 className="text-lg font-semibold text-gray-800">
+                {user ? 'Current Streak' : 'Try Premium'}
+              </h3>
               <Award className="w-6 h-6 text-yellow-600" />
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-yellow-600 mb-1">
-                {stats.currentStreak}
-              </div>
-              <div className="text-gray-600 text-sm">days in a row</div>
+              {user ? (
+                <>
+                  <div className="text-3xl font-bold text-yellow-600 mb-1">
+                    {stats.currentStreak}
+                  </div>
+                  <div className="text-gray-600 text-sm">days in a row</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-2xl font-bold text-yellow-600 mb-1">
+                    Free
+                  </div>
+                  <div className="text-gray-600 text-sm">Try all features</div>
+                </>
+              )}
             </div>
           </div>
 
@@ -203,10 +224,17 @@ export default function DashboardPage() {
 
         {/* Recent Activity */}
         <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">Continue Learning</h2>
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">
+            {user ? 'Continue Learning' : 'Ready to Start?'}
+          </h2>
           <div className="text-gray-600 text-center py-8">
             <BookOpen className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-            <p>Start a story above to begin tracking your progress!</p>
+            <p>
+              {user ? 
+                'Start a story above to begin tracking your progress!' :
+                'Choose any story above to start learning ASL for free!'
+              }
+            </p>
           </div>
         </div>
       </div>

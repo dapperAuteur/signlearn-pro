@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { useState, useEffect, createContext, useContext } from 'react';
@@ -32,19 +31,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Get initial session
     const getInitialSession = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      if (error) {
-        console.error('Error getting session:', error);
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Session error:', error);
+        } else if (session) {
+          setSession(session);
+          setUser(session.user);
+          // Don't fetch profile for now to avoid additional errors
+        }
+      } catch (error) {
+        console.error('Auth initialization error:', error);
+      } finally {
+        setLoading(false);
       }
-      
-      if (session) {
-        setSession(session);
-        setUser(session.user);
-        await fetchProfile(session.user.id);
-      }
-      
-      setLoading(false);
     };
 
     getInitialSession();
@@ -52,84 +53,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (session) {
-          setSession(session);
-          setUser(session.user);
-          await fetchProfile(session.user.id);
-          
-          // Redirect to dashboard after sign in
-          if (event === 'SIGNED_IN') {
-            router.push('/dashboard');
-          }
-        } else {
-          setSession(null);
-          setUser(null);
+        console.log('Auth event:', event, session?.user?.email);
+        
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (event === 'SIGNED_IN' && session) {
+          router.push('/dashboard');
+        } else if (event === 'SIGNED_OUT') {
           setProfile(null);
-          
-          // Redirect to home after sign out
-          if (event === 'SIGNED_OUT') {
-            router.push('/');
-          }
+          router.push('/');
         }
         
         setLoading(false);
       }
     );
 
-    return () => {
-      subscription.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, [router]);
 
-  const fetchProfile = async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (error) {
-        // If profile doesn't exist, create it
-        if (error.code === 'PGRST116') {
-          await createProfile(userId);
-          return;
-        }
-        throw error;
-      }
-
-      setProfile(data);
-    } catch (error) {
-      console.error('Error fetching profile:', error);
-    }
-  };
-
-  const createProfile = async (userId: string) => {
-    try {
-      const { data: user } = await supabase.auth.getUser();
-      
-      const { data, error } = await supabase
-        .from('profiles')
-        .insert({
-          id: userId,
-          email: user.user?.email || '',
-          subscription_tier: 'free',
-          preferred_language: 'english'
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      setProfile(data);
-    } catch (error) {
-      console.error('Error creating profile:', error);
-    }
-  };
-
   const signIn = async (email: string, password: string) => {
-    try {
-      setLoading(true);
-      
+    try {      
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -141,10 +85,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return {};
     } catch (error) {
-      return { error: 'An unexpected error occurred' };
-    } finally {
-      setLoading(false);
+      return { error: 'Sign in failed' };
     }
+    // Don't manage loading here - let auth state change handle it
   };
 
   const signUp = async (
@@ -158,20 +101,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          data: metadata
-        }
+        options: { data: metadata }
       });
 
       if (error) {
+        setLoading(false);
         return { error: error.message };
       }
 
+      setLoading(false);
       return {};
     } catch (error) {
-      return { error: 'An unexpected error occurred' };
-    } finally {
       setLoading(false);
+      return { error: 'Sign up failed' };
     }
   };
 
@@ -180,35 +122,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(true);
       await supabase.auth.signOut();
     } catch (error) {
-      console.error('Error signing out:', error);
-    } finally {
-      setLoading(false);
+      console.error('Sign out error:', error);
     }
+    // Loading state will be handled by auth state change
   };
 
   const updateProfile = async (updates: Partial<Profile>) => {
-    if (!user) return { error: 'Not authenticated' };
-
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id)
-        .select()
-        .single();
-
-      if (error) {
-        return { error: error.message };
-      }
-
-      setProfile(data);
-      return {};
-    } catch (error) {
-      return { error: 'Failed to update profile' };
-    }
+    return { error: 'Profile updates not implemented in offline mode' };
   };
 
   const value: AuthContextType = {
@@ -235,18 +155,4 @@ export function useAuth() {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-}
-
-// Protected route hook
-export function useRequireAuth() {
-  const { user, loading } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push('/login');
-    }
-  }, [user, loading, router]);
-
-  return { user, loading };
 }

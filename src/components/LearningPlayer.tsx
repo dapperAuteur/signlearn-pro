@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import MuxPlayer from '@mux/mux-player-react';
 import { ChevronLeft, ChevronRight, Play, Eye, Volume2, Settings } from 'lucide-react';
-import { supabase, queries } from '@/lib/supabase/client';
+import { queries } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { 
   type StoryLesson, 
@@ -48,7 +48,7 @@ export function LearningPlayer({
     if (!user) return;
     
     try {
-      const newSession = await queries.createLearningSession(user.id, storyId);
+      const newSession = await queries.createLearningSession(user.id, storyId) as LearningSession;
       setSession(newSession);
       setSessionStats(prev => ({ ...prev, startTime: Date.now() }));
     } catch (error) {
@@ -57,7 +57,20 @@ export function LearningPlayer({
   };
 
   const handleAnswerSubmit = async (wasCorrect: boolean) => {
-    if (!user || !currentLesson) return;
+    if (!user || !currentLesson) {
+      // Guest mode - just update session stats without saving to database
+      setSessionStats(prev => ({
+        ...prev,
+        correct: wasCorrect ? prev.correct + 1 : prev.correct,
+        total: prev.total + 1
+      }));
+      
+      // Auto-advance after correct answer
+      if (wasCorrect && currentIndex < lessons.length - 1) {
+        setTimeout(() => nextLesson(), 1500);
+      }
+      return;
+    }
 
     try {
       // Update lesson progress
@@ -66,7 +79,7 @@ export function LearningPlayer({
         currentLesson.id,
         storyId,
         wasCorrect
-      );
+      ) as UserProgress;
 
       // Update session stats
       setSessionStats(prev => ({

@@ -2,7 +2,8 @@
 // Run with: node scripts/generate-full-migration.js
 
 import { readFileSync, writeFileSync } from 'fs';
-import { parse } from 'papaparse';
+import papaparse from 'papaparse';
+const { parse } = papaparse;
 
 async function generateFullMigration() {
   try {
