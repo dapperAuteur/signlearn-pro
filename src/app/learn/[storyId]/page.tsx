@@ -11,6 +11,9 @@ interface LearnPageProps {
   };
 }
 
+// Force dynamic rendering because this page uses auth state
+export const dynamic = 'force-dynamic';
+
 async function getStoryWithLessons(storyId: string): Promise<StoryWithLessons | null> {
   return serverQueries.getStoryWithLessons(storyId);
 }
@@ -93,15 +96,6 @@ export default async function LearnPage({ params }: LearnPageProps) {
       </div>
     </div>
   );
-}
-
-// Generate static params for better performance
-export async function generateStaticParams() {
-  const stories = await serverQueries.getAllStories();
-  
-  return stories.map((story: { id: string }) => ({
-    storyId: story.id,
-  }));
 }
 
 // Metadata for SEO
