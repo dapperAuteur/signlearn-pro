@@ -58,11 +58,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         
+        // Only redirect on successful sign in, not other events
         if (event === 'SIGNED_IN' && session) {
           router.push('/dashboard');
         } else if (event === 'SIGNED_OUT') {
           setProfile(null);
-          router.push('/');
+          // Don't auto-redirect on sign out
         }
         
         setLoading(false);

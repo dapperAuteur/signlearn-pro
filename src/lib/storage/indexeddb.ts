@@ -1,5 +1,5 @@
 // IndexedDB wrapper for offline storage
-import { type Story, type StoryLesson, type UserProgress, type LearningSession } from '@/types/database';
+import { type StoryLesson, type UserProgress, type LearningSession } from '@/types/database';
 
 class SignLearnDB {
   private db: IDBDatabase | null = null;
@@ -49,7 +49,7 @@ class SignLearnDB {
     });
   }
 
-  async getStories(): Promise<Story[]> {
+  async getStories() {
     await this.ensureDB();
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(['stories'], 'readonly');
@@ -126,52 +126,6 @@ class SignLearnDB {
       const request = store.add(sessionData);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
-    });
-  }
-
-  async addStory(story: Story) {
-    await this.ensureDB();
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(['stories'], 'readwrite');
-      const store = transaction.objectStore('stories');
-      const request = store.add(story);
-      
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  async addLesson(lesson: StoryLesson) {
-    await this.ensureDB();
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(['lessons'], 'readwrite');
-      const store = transaction.objectStore('lessons');
-      const request = store.add(lesson);
-      
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  async clearAll(): Promise<void> {
-    await this.ensureDB();
-    return new Promise((resolve, reject) => {
-      const objectStoreNames = Array.from(this.db!.objectStoreNames);
-      if (objectStoreNames.length === 0) {
-        return resolve();
-      }
-
-      const transaction = this.db!.transaction(objectStoreNames, 'readwrite');
-      transaction.oncomplete = () => {
-        resolve();
-      };
-      transaction.onerror = () => {
-        reject(transaction.error);
-      };
-
-      objectStoreNames.forEach(storeName => {
-        transaction.objectStore(storeName).clear();
-      });
     });
   }
 

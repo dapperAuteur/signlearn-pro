@@ -1,0 +1,9 @@
+{
+  "name": "SignLearn Pro",
+  "short_name": "SignLearn",
+  "description": "Learn ASL through interactive stories",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb"
+}
